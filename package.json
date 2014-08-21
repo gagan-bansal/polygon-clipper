@@ -1,0 +1,32 @@
+{
+  "name": "polygon-clipper",
+  "version": "0.0.0",
+  "description": "Perform polygon boolean operations union, intersection, difference and XOR",
+  "main": "src/main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "watch": "watchify src/main.js --debug --standalone PolygonClipper -o dist/polygon-clipper.js -v"
+  },
+  "keywords": [
+    "vatti",
+    "polygon",
+    "boolean",
+    "union",
+    "intersection",
+    "difference",
+    "XOR",
+    "clipper"
+
+  ],
+  "author": "Gagan Bansal <gaganbansal123@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "area-polygon": "^1.0.0",
+    "dequeue": "^1.0.5",
+    "fast-list": "^1.0.2",
+    "intersection": "0.0.1"
+  },
+  "devDependencies": {
+    "watchify": "^0.8.3"
+  }
+}
