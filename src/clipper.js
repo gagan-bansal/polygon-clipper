@@ -1,7 +1,6 @@
-var Dequeue = require('dequeue');
 var intersection = require('intersection');
 var FastList = require('fast-list'); 
-
+var geojsonAllRings = require('geojson-allrings');
 var getLocalMinimaList = require('./local-minima-list.js');
 var List = require('./sorted-linked-list.js');
 var AETClass = require('./aet.js');
@@ -17,111 +16,104 @@ var Precision = require('./precision.js');
 // the items in linked list during the scaning from down to top.
 // So this way actualy I am able to sort first edge of bound in AET, while also
 // have access to next pointer in the bound linked list.
-var AET, 
- PT,
- SBT,
- LMT;
-function initGlobal() {
-  AET = new AETClass();
-  PT = [];
-  SBT = new List();
-  LMT = new List({compare: function(a,b) {
+var Clipper = function() {
+};
+Clipper.prototype.overlay = function(subj,clip,process) {
+  this.AET = new AETClass();
+  this.PT = [];
+  this.SBT = new List();
+  this.LMT = new List({compare: function(a,b) {
     return a.yBot - b.yBot;
   }});
-}
-function intersect(poly1,poly2) {
-  initGlobal();
   // insert local minima node i.e. object of left and  right bound and yBot
-  var updateLMTandSBT = function(node) { 
-    LMT.insert(node);
-    //TODO finding node in sorted list is expensive
-    if (!SBT.find(node.yBot)) SBT.insert(node.yBot);
-  };
-  getLocalMinimaList(poly1,'subject').forEach(updateLMTandSBT); 
-  getLocalMinimaList(poly2,'clip').forEach(updateLMTandSBT);
-  var yBot = SBT.pop(),yTop;
-  while (SBT.head) {
-    while (LMT.head && Math.round10(LMT.head.datum.yBot,-5) ===
+  this.updateLMTandSBT(subj,'subject');
+  this.updateLMTandSBT(clip,'clip');
+  var yBot = this.SBT.pop(),yTop;
+  while (this.SBT.head) {
+    while (this.LMT.head && Math.round10(this.LMT.head.datum.yBot,-5) ===
       Math.round10(yBot,-5)) {
-      addEdgesOfLMT(LMT.pop());
+      this.addEdgesOfLMT(this.LMT.pop());
     }
-    yTop = SBT.pop();
+    yTop = this.SBT.pop();
     console.log('yBot: '+ yBot + ' ,yTop: '+ yTop);
-    buildIntersections(yBot,yTop);
-    processIntersections();
-    processAETedges(yBot,yTop);
+    this.buildIntersections(yBot,yTop);
+    this.processIntersections();
+    this.processAETedges(yBot,yTop);
     yBot = yTop;
   }
-  var output = PT
+  var output = this.PT
     .filter(function (poly,i) {
       //remove merged polygon to another polygon 
       return poly.left && poly.right;})
     .map(function (poly) {
       return poly.toCoordinates();
     });
-  return output;
-}
-function extractPolygons(PT) {
-  var uniquePT = PT.filter(function(elem, pos, self) {
-    var ind=0;
-    while ( self[ind].coordinates !== self[pos].coordinates) {
-      ind++;
-    }
-    return ind == pos;
-  });
-  return uniquePT.map(function(poly) {
-    var points= [];
-    var cur = poly.coordinates._head;
-    while(cur) {
-      points.push([cur.data.x, cur.data.y]);
-      cur = cur.next;
-    }
-    points.push([points[0][0], points[0][1]]);
-    return points;
-  });
-}
+  return {type:'MultiPolygon', coordinates:output};
+};
+Clipper.prototype.updateLMTandSBT = function(poly,type) {
+  if (poly.type && poly.type === 'Polygon') {
+        this.updateLMTandSBTwithPolygon(poly,type);
+  } else if (poly.type && poly.type === 'Feature') {
+        this.updateLMTandSBTwithPolygon(poly.geometry,type);
+  } else if (poly.type && poly.type === 'FeatureCollection') {
+      poly.features.forEach(function(pg) {
+        this.updateLMTandSBTwithPolygon(pg.geometry,type);
+      },this);
+  } else {
+     //TODO throw error
+  }
+};
+Clipper.prototype.updateLMTandSBTwithPolygon = function(poly,type) {
+  geojsonAllRings(poly).forEach(function (ring) {
+    getLocalMinimaList(ring,type).forEach(function(node){
+      this.LMT.insert(node);
+      //TODO finding node in sorted list is expensive
+      if (!this.SBT.find(node.yBot)) this.SBT.insert(node.yBot);
+    }, this);
+  }, this);
+};
 //NOTE: every where edge means head of bound 
 // always insert/attach in AET, ST, intersection point, polygon edge etc
-function addEdgesOfLMT(node) {
+Clipper.prototype.addEdgesOfLMT = function(node) {
   //TODO-vatti first insert in AET then addLocalMin if edges are cotributing
-  AET.insert(node.left);
-  AET.insert(node.right);
-  node.left.getHeadData().side = AET.getSide(node.left);
-  node.right.getHeadData().side = AET.getSide(node.right);
+  this.AET.insert(node.left);
+  this.AET.insert(node.right);
+  node.left.getHeadData().side = this.AET.getSide(node.left);
+  node.right.getHeadData().side = this.AET.getSide(node.right);
   // left is not necessary edge1
-  if(AET.isContributing(node.left)) {
-    addLocalMin(
+  if(this.AET.isContributing(node.left)) {
+    this.addLocalMin(
       node.left.getHeadData().segment.start,
       node.left,
       node.right);
   }
   //TODO finding node in sorted list is expensive
-  if (!SBT.find(node.left.getHeadData().yTop)) {
-    SBT.insert(node.left.getHeadData().yTop);
+  if (!this.SBT.find(node.left.getHeadData().yTop)) {
+    this.SBT.insert(node.left.getHeadData().yTop);
   }
-  if (!SBT.find(node.right.getHeadData().yTop)) {  
-    SBT.insert(node.right.getHeadData().yTop);
+  if (!this.SBT.find(node.right.getHeadData().yTop)) {  
+    this.SBT.insert(node.right.getHeadData().yTop);
   }
-}
+};
 // each polygon is linked list (not sroted linked list) of left side edges 
 // and right side edges.
-function addLocalMin(point,edge1,edge2) {
-  var isRightRight = AET.getData(AET.tail) === edge2.getHeadData();
+Clipper.prototype.addLocalMin = function(point,edge1,edge2) {
+  var isRightRight = this.AET.getData(this.AET.tail) === edge2.getHeadData();
 
-  var poly = new Polygon(PT.length,isRightRight);
+  var poly = new Polygon(this.PT.length,isRightRight);
   poly.addLeft(point);
   poly.addRight(point);
   edge1.getHeadData().polygon = poly;
   edge2.getHeadData().polygon = poly;
-  PT.push(poly);
+  this.PT.push(poly);
   return poly;
-}
+};
 
-function addLocalMax(point,edge1,edge2) {
+Clipper.prototype.addLocalMax = function(point,edge1,edge2) {
   if(edge1.getHeadData().side === 'left') {
-    addLeft(point,edge1);
+    this.addLeft(point,edge1);
   } else {
-    addRight(point,edge1);
+    this.addRight(point,edge1);
   }
   var poly1 = edge1.getHeadData().polygon,
     poly2 = edge2.getHeadData().polygon;
@@ -130,78 +122,78 @@ function addLocalMax(point,edge1,edge2) {
     poly2.appendPolygon(poly1,edge1.getHeadData().side);
     // change ref to edge2->polygon from edge1->polygon for all active edges 
     // that have edge1->polygon
-    var curPoly, cur = AET.head;
+    var curPoly, cur = this.AET.head;
     do {
-      curPoly = AET.getData(cur).polygon;
+      curPoly = this.AET.getData(cur).polygon;
       if (curPoly && curPoly.id === poly1.id) {
-        AET.getData(cur).polygon = poly2;
+        this.AET.getData(cur).polygon = poly2;
       }
       cur = cur.next;
-    } while (cur !== AET.head);
+    } while (cur !== this.AET.head);
   }
 }
 
 //its not O(log(n)) but O(n)
 function removePolygon(poly) {
-  var ind = PT.indexOf(poly);
+  var ind = this.PT.indexOf(poly);
   if(ind > -1) {
-    PT.splice(ind,1);
+    this.PT.splice(ind,1);
     return true;
   } else {
     return false;
   }
-}
+};
 
-function buildIntersections(yBot,yTop) {
+Clipper.prototype.buildIntersections = function(yBot,yTop) {
   var dY = yTop - yBot;
   ST = new STClass();
   IT = new ITClass(); 
   var intPoint;
   //initiate the first edge in ST
-  var AETedge = AET.getHead(); 
-  var xTop = AET.getData(AETedge).xBot + AET.getData(AETedge).deltaX * dY;
-  AET.getData(AETedge).xTop = xTop;
-  AET.getData(AETedge).isProcessed = false; //used in processAETedges
-  var STedge = ST.insert(AET.getBound(AETedge)); //return the ref to inserted data
+  var AETedge = this.AET.getHead(); 
+  var xTop = this.AET.getData(AETedge).xBot + this.AET.getData(AETedge).deltaX * dY;
+  this.AET.getData(AETedge).xTop = xTop;
+  this.AET.getData(AETedge).isProcessed = false; //used in processAETedges
+  var STedge = ST.insert(this.AET.getBound(AETedge)); //return the ref to inserted data
 
   AETedge = AETedge.next;
-  while( AETedge !== AET.head) {
-    AET.getData(AETedge).isProcessed = false; //used in processAETedges
-    xTop = AET.getData(AETedge).xBot + AET.getData(AETedge).deltaX * dY;
+  while( AETedge !== this.AET.head) {
+    this.AET.getData(AETedge).isProcessed = false; //used in processAETedges
+    xTop = this.AET.getData(AETedge).xBot + this.AET.getData(AETedge).deltaX * dY;
     //check intersections
     //TODO what if xTop == STedge.xTop
     while(Math.round10(xTop,-5) < Math.round10(ST.getData(STedge).xTop,-5)) {
       intPoint = intersection.intersect(ST.getData(STedge).segment,
-        AET.getData(AETedge).segment);
+        this.AET.getData(AETedge).segment);
       //attaching head of the bound to int point
       intPoint.leftEdge = ST.getBound(STedge); // considering the bottom x
-      intPoint.rightEdge = AET.getBound(AETedge);
+      intPoint.rightEdge = this.AET.getBound(AETedge);
       IT.insert(intPoint);
       if(STedge === ST.head) break;
       STedge = STedge.prev;
     }
-    AET.getData(AETedge).xTop = xTop;
-    ST.insert(AET.getBound(AETedge)); //TODO is should be insert before STedge
+    this.AET.getData(AETedge).xTop = xTop;
+    ST.insert(this.AET.getBound(AETedge)); //TODO is should be insert before STedge
     STedge= ST.tail;
     AETedge = AETedge.next;
   }
-}
+};
 
-function processIntersections() {
+Clipper.prototype.processIntersections = function() {
   var intPoint = IT.getHead();
   if (intPoint) {
     var intPointType,edge1,edge2, temp, isContributing;
     do {
       edge1 = IT.getData(intPoint).leftEdge;
       edge2 = IT.getData(intPoint).rightEdge;
-      intPointType = classifyIntersection(edge1.getHeadData(), edge2.getHeadData());
+      intPointType = this.classifyIntersection(edge1.getHeadData(), edge2.getHeadData());
       if (edge1.getHeadData().type === edge2.getHeadData().type) {
         //&& edge1.getHeadData().side !== edge2.getHeadData().side) {
         // like edges
         // TODO test case need to be checked
-        if(AET.isContributing(edge1)) {
-          addLeft(IT.getData(intPoint),edge1);
-          addRight(IT.getData(intPoint),edge2);
+        if(this.AET.isContributing(edge1)) {
+          this.addLeft(IT.getData(intPoint),edge1);
+          this.addRight(IT.getData(intPoint),edge2);
         }
         temp = edge1.getHeadData().side;
         edge1.getHeadData().side = edge2.getHeadData().side;
@@ -210,15 +202,15 @@ function processIntersections() {
         //TODO checking edge polygon is not part fo vatii algo
         if (intPointType === 'maxima' && edge1.getHeadData().polygon 
           && edge2.getHeadData().polygon) {
-          addLocalMax(IT.getData(intPoint),edge1,edge2);
+          this.addLocalMax(IT.getData(intPoint),edge1,edge2);
         } else if (intPointType === 'left-intermediate' 
           && edge2.getHeadData().polygon) {
-          addLeft(IT.getData(intPoint),edge2);
+          this.addLeft(IT.getData(intPoint),edge2);
         } else if (intPointType === 'right-intermediate' 
           && edge1.getHeadData().polygon) {
-          addRight(IT.getData(intPoint),edge1);
+          this.addRight(IT.getData(intPoint),edge1);
         } else if (intPointType === 'minima') {
-          addLocalMin(IT.getData(intPoint),edge1,edge2);
+          this.addLocalMin(IT.getData(intPoint),edge1,edge2);
         }
       }
       //Swap edge1 and edge2 positions in the AET;
@@ -227,11 +219,11 @@ function processIntersections() {
       // TODO it should be swap ONLY
       /*AET.remove(edge1);
       edge1.getHeadData().xBot = edge1.getHeadData().xTop;
-      AET.insert(edge1);
-      AET.remove(edge2);
+      this.AET.insert(edge1);
+      this.AET.remove(edge2);
       edge2.getHeadData().xBot = edge2.getHeadData().xTop;
-      AET.insert(edge2);*/
-      AET.swap(edge1,edge2);
+      this.AET.insert(edge2);*/
+      this.AET.swap(edge1,edge2);
       //TODO can be done in if intPointType accordingly 
       //swap polygons
       temp = edge1.getHeadData().polygon;
@@ -241,78 +233,78 @@ function processIntersections() {
       intPoint = intPoint.next;
     } while (intPoint !== IT.head );
   }
-}
+};
 
-function processAETedges(yBot,yTop) {
-  var cur = AET.getHead(),
+Clipper.prototype.processAETedges = function(yBot,yTop) {
+  var cur = this.AET.getHead(),
     vertexType,data,isContributing,prev;
   if (cur) {
     do { 
-      AET.getData(cur).isProcessed = true;
-      isContributing = AET.isContributing(AET.getBound(cur));
-      //isContributing = AET.getData(cur).polygon ? true : false;
+      this.AET.getData(cur).isProcessed = true;
+      isContributing = this.AET.isContributing(this.AET.getBound(cur));
+      //isContributing = this.AET.getData(cur).polygon ? true : false;
       //TODO vatti algo doesnt cal isContributing, can we carry forward like
         // side
-      if (Math.round10(AET.getData(cur).yTop,-5) === Math.round10(yTop,-5)) {
-        vertexType = AET.getData(cur).segment.end.type;
+      if (Math.round10(this.AET.getData(cur).yTop,-5) === Math.round10(yTop,-5)) {
+        vertexType = this.AET.getData(cur).segment.end.type;
         if (vertexType === 'maxima') {
           if(isContributing) { 
-            addLocalMax(AET.getData(cur).segment.end,AET.getBound(cur),
-              AET.getBound(cur.next));
+            this.addLocalMax(this.AET.getData(cur).segment.end,this.AET.getBound(cur),
+              this.AET.getBound(cur.next));
             //remove the cur edge and next also (being removed outside if)
             /*prev = cur;
             cur = cur.next;
-            AET.remove(prev.datum);*/
+            this.AET.remove(prev.datum);*/
           }
           /*prev = cur;
           cur = cur.next;
-          AET.remove(prev.datum);*/
+          this.AET.remove(prev.datum);*/
           var e1 = cur;
           var e2 = cur.next;
           cur = cur.next.next;
-          AET.remove(e1.datum);
-          AET.remove(e2.datum);
+          this.AET.remove(e1.datum);
+          this.AET.remove(e2.datum);
         } else {
-          vertexType = AET.getData(cur).side + '-' + vertexType;
+          vertexType = this.AET.getData(cur).side + '-' + vertexType;
           if (vertexType === 'left-intermediate') {
             if(isContributing) {
-              addLeft(AET.getData(cur).segment.end,AET.getBound(cur));
+              this.addLeft(this.AET.getData(cur).segment.end,this.AET.getBound(cur));
             }
           } else if (vertexType === 'right-intermediate') {
             if(isContributing) {
-              addRight(AET.getData(cur).segment.end,AET.getBound(cur));
+              this.addRight(this.AET.getData(cur).segment.end,this.AET.getBound(cur));
             }
           }
-          data = AET.getData(cur);
-          cur = AET.succ(cur); //returns ref to same bound but moved to 
+          data = this.AET.getData(cur);
+          cur = this.AET.succ(cur); //returns ref to same bound but moved to 
             // upper edge
-          AET.getData(cur).side = data.side;
-          //AET.getData(cur).isContributing = data.isContributing;
-          AET.getData(cur).polygon = data.polygon;
-          AET.getData(cur).isProcessed = true; //TODO sort-'circular'-linked-list
+          this.AET.getData(cur).side = data.side;
+          //this.AET.getData(cur).isContributing = data.isContributing;
+          this.AET.getData(cur).polygon = data.polygon;
+          this.AET.getData(cur).isProcessed = true; //TODO sort-'circular'-linked-list
             // is creating so many issue in while loop
           //TODO finding node in sorted list is expensive
-          if (!SBT.find(AET.getData(cur).yTop)) 
-            SBT.insert(AET.getData(cur).yTop);
+          if (!this.SBT.find(this.AET.getData(cur).yTop)) 
+            this.SBT.insert(this.AET.getData(cur).yTop);
           cur = cur.next;
         }
       } else {
-        AET.getData(cur).xBot = AET.getData(cur).xTop; 
+        this.AET.getData(cur).xBot = this.AET.getData(cur).xTop; 
         cur = cur.next;
       }
-    //} while (cur !== AET.head && AET.length > 0);
-    } while (!AET.getData(cur).isProcessed)
+    //} while (cur !== this.AET.head && this.AET.length > 0);
+    } while (!this.AET.getData(cur).isProcessed)
   }
-}
+};
 
-function addLeft(point,bound) {
+Clipper.prototype.addLeft = function(point,bound) {
   bound.getHeadData().polygon.addLeft(point);
-}
-function addRight(point,bound) {
+};
+Clipper.prototype.addRight = function(point,bound) {
   bound.getHeadData().polygon.addRight(point);
-}
+};
 
-function classifyIntersection(edge1,edge2) {
+Clipper.prototype.classifyIntersection = function(edge1,edge2) {
   var rules = { 
     'left-clip-x-left-subject': 'left-intermediate',
     'left-subject-x-left-clip': 'left-intermediate',
@@ -328,8 +320,8 @@ function classifyIntersection(edge1,edge2) {
     'right-subject-x-left-subject': ['left-intermediate','right-intermediate']*/
   };
   return rules[edge1.side + '-' + edge1.type +'-x-' + edge2.side + '-'+ edge2.type];
-}
+};
 
-module.exports = intersect;
+module.exports = Clipper;
 
-//var cur = AET.head; do { console.log(JSON.stringify(AET.getData(cur).segment)); var cur = cur.next;} while (cur !== AET.head);
+//var cur = this.AET.head; do { console.log(JSON.stringify(this.AET.getData(cur).segment)); var cur = cur.next;} while (cur !== this.AET.head);

@@ -16,7 +16,6 @@
     "difference",
     "XOR",
     "clipper"
-
   ],
   "author": "Gagan Bansal <gaganbansal123@gmail.com>",
   "license": "MIT",
@@ -24,9 +23,11 @@
     "area-polygon": "^1.0.0",
     "dequeue": "^1.0.5",
     "fast-list": "^1.0.2",
+    "geojson-allrings": "0.0.0",
     "intersection": "0.0.1"
   },
   "devDependencies": {
+    "chai": "^1.9.1",
     "watchify": "^0.8.3"
   }
 }
