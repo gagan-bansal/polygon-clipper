@@ -25,6 +25,7 @@ Clipper.prototype.overlay = function(subj,clip,process) {
   this.LMT = new List({compare: function(a,b) {
     return a.yBot - b.yBot;
   }});
+  this.IT = null;
   // insert local minima node i.e. object of left and  right bound and yBot
   this.updateLMTandSBT(subj,'subject');
   this.updateLMTandSBT(clip,'clip');
@@ -35,30 +36,62 @@ Clipper.prototype.overlay = function(subj,clip,process) {
       this.addEdgesOfLMT(this.LMT.pop());
     }
     yTop = this.SBT.pop();
-    console.log('yBot: '+ yBot + ' ,yTop: '+ yTop);
+    //console.log('yBot: '+ yBot + ' ,yTop: '+ yTop);
     this.buildIntersections(yBot,yTop);
     this.processIntersections();
     this.processAETedges(yBot,yTop);
     yBot = yTop;
   }
-  var output = this.PT
-    .filter(function (poly,i) {
-      //remove merged polygon to another polygon 
+  /*var output = { 
+    exterior: {"type": "MultiPolygon", coordinates:[[]]},
+    holes: []};
+  polygons.forEach(function (poly) {
+    if (poly.isHole) {
+      output.holes.push(poly.getCoordinates());
+    } else {
+      output.exterior.coordinates[0].push(poly.getCoordinates());
+    }
+  });*/
+  return this.extractPolygon();
+};
+Clipper.prototype.extractPolygon = function() {
+  var output = {"type": "MultiPolygon", "coordinates": []},
+    exteriors =[],
+    holes = {};
+  this.PT
+    .filter(function (poly) {
+      //remove polygon that are merged to another polygons
       return poly.left && poly.right;})
-    .map(function (poly) {
-      return poly.toCoordinates();
+    .forEach(function (poly) {
+      if(poly.isHole) {
+        holes[poly.id] = {coordinates: poly.getCoordinates()};          
+      } else {
+        exteriors.push({coordinates: poly.getCoordinates(),
+          holeIds: poly.holeIds});
+      }
     });
-  return {type:'MultiPolygon', coordinates:output};
+  // append holes to exterior
+  exteriors.forEach(function(poly) {
+    var coordinates = [poly.coordinates];
+    poly.holeIds.forEach(function(id) {
+      coordinates.push(holes[id].coordinates);});
+    output.coordinates.push(coordinates);
+  });
+  return output;
 };
 Clipper.prototype.updateLMTandSBT = function(poly,type) {
   if (poly.type && poly.type === 'Polygon') {
-        this.updateLMTandSBTwithPolygon(poly,type);
+    this.updateLMTandSBTwithPolygon(poly,type);
+  } else if (poly.type && poly.type === 'MultiPolygon') {
+    poly.coordinates.forEach(function(each) {
+      this.updateLMTandSBTwithPolygon({type:'Polygon',coordinates:each},type)
+    },this);
   } else if (poly.type && poly.type === 'Feature') {
-        this.updateLMTandSBTwithPolygon(poly.geometry,type);
+    this.updateLMTandSBTwithPolygon(poly.geometry,type);
   } else if (poly.type && poly.type === 'FeatureCollection') {
-      poly.features.forEach(function(pg) {
-        this.updateLMTandSBTwithPolygon(pg.geometry,type);
-      },this);
+    poly.features.forEach(function(pg) {
+      this.updateLMTandSBTwithPolygon(pg.geometry,type);
+    },this);
   } else {
      //TODO throw error
   }
@@ -98,9 +131,7 @@ Clipper.prototype.addEdgesOfLMT = function(node) {
 // each polygon is linked list (not sroted linked list) of left side edges 
 // and right side edges.
 Clipper.prototype.addLocalMin = function(point,edge1,edge2) {
-  var isRightRight = this.AET.getData(this.AET.tail) === edge2.getHeadData();
-
-  var poly = new Polygon(this.PT.length,isRightRight);
+  var poly = new Polygon(this.PT.length);
   poly.addLeft(point);
   poly.addRight(point);
   edge1.getHeadData().polygon = poly;
@@ -131,23 +162,16 @@ Clipper.prototype.addLocalMax = function(point,edge1,edge2) {
       cur = cur.next;
     } while (cur !== this.AET.head);
   }
-}
-
-//its not O(log(n)) but O(n)
-function removePolygon(poly) {
-  var ind = this.PT.indexOf(poly);
-  if(ind > -1) {
-    this.PT.splice(ind,1);
-    return true;
-  } else {
-    return false;
+  poly2.isHole = edge1.getHeadData().side === 'right';
+  if(poly2.isHole) {
+    this.assignToExterior(poly2,edge1,edge2);
   }
 };
 
 Clipper.prototype.buildIntersections = function(yBot,yTop) {
   var dY = yTop - yBot;
   ST = new STClass();
-  IT = new ITClass(); 
+  this.IT = new ITClass(); 
   var intPoint;
   //initiate the first edge in ST
   var AETedge = this.AET.getHead(); 
@@ -168,7 +192,7 @@ Clipper.prototype.buildIntersections = function(yBot,yTop) {
       //attaching head of the bound to int point
       intPoint.leftEdge = ST.getBound(STedge); // considering the bottom x
       intPoint.rightEdge = this.AET.getBound(AETedge);
-      IT.insert(intPoint);
+      this.IT.insert(intPoint);
       if(STedge === ST.head) break;
       STedge = STedge.prev;
     }
@@ -180,20 +204,25 @@ Clipper.prototype.buildIntersections = function(yBot,yTop) {
 };
 
 Clipper.prototype.processIntersections = function() {
-  var intPoint = IT.getHead();
+  var intPoint = this.IT.getHead();
   if (intPoint) {
     var intPointType,edge1,edge2, temp, isContributing;
     do {
-      edge1 = IT.getData(intPoint).leftEdge;
-      edge2 = IT.getData(intPoint).rightEdge;
+      edge1 = this.IT.getData(intPoint).leftEdge;
+      edge2 = this.IT.getData(intPoint).rightEdge;
       intPointType = this.classifyIntersection(edge1.getHeadData(), edge2.getHeadData());
       if (edge1.getHeadData().type === edge2.getHeadData().type) {
         //&& edge1.getHeadData().side !== edge2.getHeadData().side) {
         // like edges
         // TODO test case need to be checked
         if(this.AET.isContributing(edge1)) {
-          this.addLeft(IT.getData(intPoint),edge1);
-          this.addRight(IT.getData(intPoint),edge2);
+          if (edge1.getHeadData().side === 'left') {
+            this.addLeft(this.IT.getData(intPoint),edge1);
+            this.addRight(this.IT.getData(intPoint),edge2);
+          } else {
+            this.addRight(this.IT.getData(intPoint),edge1);
+            this.addLeft(this.IT.getData(intPoint),edge2);
+          }
         }
         temp = edge1.getHeadData().side;
         edge1.getHeadData().side = edge2.getHeadData().side;
@@ -202,27 +231,17 @@ Clipper.prototype.processIntersections = function() {
         //TODO checking edge polygon is not part fo vatii algo
         if (intPointType === 'maxima' && edge1.getHeadData().polygon 
           && edge2.getHeadData().polygon) {
-          this.addLocalMax(IT.getData(intPoint),edge1,edge2);
+          this.addLocalMax(this.IT.getData(intPoint),edge1,edge2);
         } else if (intPointType === 'left-intermediate' 
           && edge2.getHeadData().polygon) {
-          this.addLeft(IT.getData(intPoint),edge2);
+          this.addLeft(this.IT.getData(intPoint),edge2);
         } else if (intPointType === 'right-intermediate' 
           && edge1.getHeadData().polygon) {
-          this.addRight(IT.getData(intPoint),edge1);
+          this.addRight(this.IT.getData(intPoint),edge1);
         } else if (intPointType === 'minima') {
-          this.addLocalMin(IT.getData(intPoint),edge1,edge2);
+          this.addLocalMin(this.IT.getData(intPoint),edge1,edge2);
         }
       }
-      //Swap edge1 and edge2 positions in the AET;
-      //TODO there should be some other way xBot is modified. If there is
-      // another intersection on same line it may be problem 
-      // TODO it should be swap ONLY
-      /*AET.remove(edge1);
-      edge1.getHeadData().xBot = edge1.getHeadData().xTop;
-      this.AET.insert(edge1);
-      this.AET.remove(edge2);
-      edge2.getHeadData().xBot = edge2.getHeadData().xTop;
-      this.AET.insert(edge2);*/
       this.AET.swap(edge1,edge2);
       //TODO can be done in if intPointType accordingly 
       //swap polygons
@@ -231,7 +250,7 @@ Clipper.prototype.processIntersections = function() {
       edge2.getHeadData().polygon = temp;
       //TODO why not recalculate side of edges
       intPoint = intPoint.next;
-    } while (intPoint !== IT.head );
+    } while (intPoint !== this.IT.head );
   }
 };
 
@@ -242,7 +261,6 @@ Clipper.prototype.processAETedges = function(yBot,yTop) {
     do { 
       this.AET.getData(cur).isProcessed = true;
       isContributing = this.AET.isContributing(this.AET.getBound(cur));
-      //isContributing = this.AET.getData(cur).polygon ? true : false;
       //TODO vatti algo doesnt cal isContributing, can we carry forward like
         // side
       if (Math.round10(this.AET.getData(cur).yTop,-5) === Math.round10(yTop,-5)) {
@@ -251,14 +269,7 @@ Clipper.prototype.processAETedges = function(yBot,yTop) {
           if(isContributing) { 
             this.addLocalMax(this.AET.getData(cur).segment.end,this.AET.getBound(cur),
               this.AET.getBound(cur.next));
-            //remove the cur edge and next also (being removed outside if)
-            /*prev = cur;
-            cur = cur.next;
-            this.AET.remove(prev.datum);*/
           }
-          /*prev = cur;
-          cur = cur.next;
-          this.AET.remove(prev.datum);*/
           var e1 = cur;
           var e2 = cur.next;
           cur = cur.next.next;
@@ -281,7 +292,7 @@ Clipper.prototype.processAETedges = function(yBot,yTop) {
           this.AET.getData(cur).side = data.side;
           //this.AET.getData(cur).isContributing = data.isContributing;
           this.AET.getData(cur).polygon = data.polygon;
-          this.AET.getData(cur).isProcessed = true; //TODO sort-'circular'-linked-list
+          this.AET.getData(cur).isProcessed = true; //TODO sorted-'circular'-linked-list
             // is creating so many issue in while loop
           //TODO finding node in sorted list is expensive
           if (!this.SBT.find(this.AET.getData(cur).yTop)) 
@@ -303,7 +314,50 @@ Clipper.prototype.addLeft = function(point,bound) {
 Clipper.prototype.addRight = function(point,bound) {
   bound.getHeadData().polygon.addRight(point);
 };
-
+Clipper.prototype.assignToExterior = function(polygon, edge1,edge2) {
+  var leftExteriorId, rightExteriorId,
+    leftEdge, rightEdge,
+    AETedge1 = this.AET.find(edge1),
+    edgeData;
+  var cur = AETedge1 ? AETedge1.prev : null; 
+  if(cur) {
+    do {
+      edgeData = this.AET.getData(cur);
+      if (edgeData.polygon && edgeData.isHole) {
+        cur = cur.prev; 
+      } else {
+        if(edgeData.side === 'left') {
+          if (edgeData.polygon.holeIds.indexOf(polygon.id) < 0) {
+            //edgeData.polygon.holeIds.push(polygon.id);
+            leftEdgeData = edgeData;
+          }
+        }
+        break;
+      }
+    } while (cur !== this.AET.tail);
+  }
+  cur = AETedge1 ? AETedge1.next.next : null; //AETedge1.next is edge2
+  if(cur) {
+    do {
+      edgeData = this.AET.getData(cur);
+      if (edgeData.polygon && edgeData.isHole) {
+        cur = cur.next;
+      } else {
+        if(edgeData.side === 'right') {
+          if (edgeData.polygon.holeIds.indexOf(polygon.id) < 0) {
+            //edgeData.polygon.holeIds.push(polygon.id);
+            rightEdgeData = edgeData;
+          }
+        }
+        break;
+      }
+    } while (cur !== this.AET.head);
+  }
+  if(leftEdgeData.polygon.id !== polygon.id && 
+    leftEdgeData.polygon.id === rightEdgeData.polygon.id) {
+    leftEdgeData.polygon.holeIds.push(polygon.id);
+  }
+};
 Clipper.prototype.classifyIntersection = function(edge1,edge2) {
   var rules = { 
     'left-clip-x-left-subject': 'left-intermediate',
@@ -314,14 +368,8 @@ Clipper.prototype.classifyIntersection = function(edge1,edge2) {
     'left-clip-x-right-subject': 'maxima',
     'right-subject-x-left-clip': 'minima',
     'right-clip-x-left-subject': 'minima'
-    /*'left-clip-x-right-clip': ['left-intermediate','right-intermediate'],
-    'right-clip-x-left-clip': ['left-intermediate','right-intermediate'],
-    'left-subject-x-right-subject': ['left-intermediate','right-intermediate'],
-    'right-subject-x-left-subject': ['left-intermediate','right-intermediate']*/
   };
   return rules[edge1.side + '-' + edge1.type +'-x-' + edge2.side + '-'+ edge2.type];
 };
 
 module.exports = Clipper;
-
-//var cur = this.AET.head; do { console.log(JSON.stringify(this.AET.getData(cur).segment)); var cur = cur.next;} while (cur !== this.AET.head);

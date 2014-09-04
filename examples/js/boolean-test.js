@@ -1,51 +1,79 @@
 // allow testing of specific renderers via "?renderer=Canvas", etc
 var renderer = OpenLayers.Util.getParameters(window.location.href).renderer;
 renderer = (renderer) ? [renderer] : OpenLayers.Layer.Vector.prototype.renderers;
+var subjStyle = new OpenLayers.StyleMap(OpenLayers.Util.applyDefaults(
+  {fillColor: "#32CD32", strokeColor: "#32CD32"},
+  OpenLayers.Feature.Vector.style["default"]));
+var subjLyr = new OpenLayers.Layer.Vector("subject",{styleMap: subjStyle});
+var clipStyle = new OpenLayers.StyleMap(OpenLayers.Util.applyDefaults(
+  {fillColor: "yellow", strokeColor: "yellow"},
+  OpenLayers.Feature.Vector.style["default"]));
+var clipLyr = new OpenLayers.Layer.Vector("subject",{styleMap: clipStyle});
+var outStyle = new OpenLayers.StyleMap(OpenLayers.Util.applyDefaults(
+  {fillColor: "#DC143C", strokeColor: "#DC143C"},
+  OpenLayers.Feature.Vector.style["default"]));
+var outLyr = new OpenLayers.Layer.Vector("output",{styleMap: outStyle});
 
 var map = new OpenLayers.Map({
     div: "map",
-    layers: [
-        new OpenLayers.Layer.OSM(),
-        new OpenLayers.Layer.Vector("Vector Layer", {
-            renderers: renderer
-        })
-    ],
+    layers: [ new OpenLayers.Layer.OSM(),subjLyr,clipLyr,outLyr],
     center: new OpenLayers.LonLat(0, 0),
     zoom: 1
 });
 
-var draw = new OpenLayers.Control.DrawFeature(
-    map.layers[1],
-    OpenLayers.Handler.Polygon,
-    {handlerOptions: {holeModifier: "altKey"}}
-);
-map.addControl(draw);
-draw.activate();
+var drawSubj = new OpenLayers.Control.DrawFeature(subjLyr,
+    OpenLayers.Handler.Polygon,{handlerOptions: {holeModifier: "altKey"}});
+var drawClip = new OpenLayers.Control.DrawFeature(clipLyr,
+    OpenLayers.Handler.Polygon,{handlerOptions: {holeModifier: "altKey"}});
+map.addControls([drawSubj,drawClip]);
+drawSubj.activate();
+
+var controls ={ drawSubj: drawSubj, drawClip: drawClip};
 
 var output;
 function doIntersection() {
   var parser = new OpenLayers.Format.GeoJSON();
-  if(map.layers[1].features.length > 1) {
+  if(subjLyr.features.length > 0 && clipLyr.features.length > 0) {
     console.log('Intersection in process..');
-    var clip = JSON.parse( parser.write(map.layers[1].features[0].geometry));
-    var subj = JSON.parse( parser.write(map.layers[1].features[1].geometry));
-    output = PolygonClipper(clip.coordinates[0],subj.coordinates[0]);
+    var subj = JSON.parse( parser.write(
+       new OpenLayers.Geometry.MultiPolygon(subjLyr.features.map(function(f) {
+         return f.geometry;
+       }))
+    ));
+    var clip = JSON.parse( parser.write(
+       new OpenLayers.Geometry.MultiPolygon(clipLyr.features.map(function(f) {
+         return f.geometry;
+       }))
+    ));
+    output = polygonClipper(clip,subj,'intersection');
     console.log(JSON.stringify(output));
     var jsonFeat = {
       "type": "Feature",
-      "geometry": {
-        "type": "Polygon", 
-        "coordinates" : output
-      }
+      "geometry": output.exterior
     };
-    var feats = parser.read(jsonFeat);
-    map.layers[1].drawFeature(feats[0],
-      {'strokeWidth': 3, 'strokeColor': '#ff0000'});
+    var feats = parser.read(output);
+    outLyr.addFeatures(feats)
   } else {
     console.log('No features to process.');
   }
 }
 
+function clearAll() {
+  subjLyr.removeAllFeatures();
+  clipLyr.removeAllFeatures();
+  outLyr.removeAllFeatures();
+}
+$('.draw').on('click',function(evt) {
+  for(key in controls) {
+    if(key === this.id) {
+      controls[key].activate();
+      $(this).addClass('active');
+    } else {
+      controls[key].deactivate();
+      $(this).removeClass('active');
+    }
+  }
+});
 function randomTest() {
   map.layers[1].removeAllFeatures();
   map.layers[1].addFeatures([randomPoly(map.getExtent(),3,8)]);

@@ -4,8 +4,11 @@
   "description": "Perform polygon boolean operations union, intersection, difference and XOR",
   "main": "src/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "watch": "watchify src/main.js --debug --standalone PolygonClipper -o dist/polygon-clipper.js -v"
+    "test": "mocha",
+    "build-debug": "browserify index.js --debug --standalone polygonClipper | exorcist dist/polygon-clipper.js.map > dist/polygon-clipper.js",
+    "build-min": "browserify index.js --standalone polygonClipper | uglifyjs -c > dist/polygon-clipper.min.js",
+    "build": "npm run build-debug && npm run build-min",
+    "watch": "watchify index.js --debug --standalone polygonClipper -o dist/polygon-clipper.js -v"
   },
   "keywords": [
     "vatti",
@@ -27,7 +30,10 @@
     "intersection": "0.0.1"
   },
   "devDependencies": {
-    "chai": "^1.9.1",
-    "watchify": "^0.8.3"
+    "browserify": "~5.10.1",
+    "chai": "~1.9.1",
+    "mocha": "~1.21.4",
+    "uglify-js": "~2.4.15",
+    "watchify": "~1.0.2"
   }
 }

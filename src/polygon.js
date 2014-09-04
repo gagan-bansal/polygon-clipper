@@ -1,8 +1,9 @@
-var Polygon = function(id,isRightRight) {
+var Polygon = function(id) {
   this.id = id;
   this.left = [];
   this.right = [];
-  this.isRightRight = isRightRight || true; // false for hole
+  this.isHole = false;
+  this.holeIds = [];
 };
 
 // assuming always append edge1 polygon to edge2 and 'this' is edge2 polygon 
@@ -19,15 +20,8 @@ Polygon.prototype.appendPolygon = function(polygon,side) {
       .concat(polygon.right);
     this.right = right;
   }
-  //polygon.extend(this);
   polygon.left = null;
   polygon.right = null;
-  /*this.lastMergedPolygon = polygon;
-  var cur = polygon;
-  while (cur) {
-    cur.extend(this);
-    cur = cur.lastMergedPolygon;
-  }*/
   return this;
 };
 
@@ -43,7 +37,6 @@ Polygon.prototype.extend = function(polygon) {
   //this.id = polygon.id;
   this.left = polygon.left;
   this.right = polygon.right;
-  //this.isRinghtRight = polygon.isRightRight;
   return this;
 };
 
@@ -51,7 +44,7 @@ Polygon.prototype.isEqual = function(polygon) {
   //return this.id === polygon.id;
   return this.left === polygon.left && this.right === polygon.right;
 };
-Polygon.prototype.toCoordinates = function() {
+Polygon.prototype.getCoordinates = function() {
   return this.right.concat(this.left.reverse())
     .map(function(pt) {
       return [pt.x, pt.y];

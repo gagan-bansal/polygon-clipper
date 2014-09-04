@@ -4,17 +4,11 @@
 var Bound = require('./bound.js');
 var List = require('./sorted-linked-list.js');
 function getBounds(path,polygonType) {
-  console.log('polygonType: ' + polygonType);
-  console.log('path: ' + JSON.stringify(path));  
   var bounds = [],
     partBound = [],
     totalDet = 0,
     bound = [],
     vertex = {},type;
-  //vertex.coord = path[0];
-  //vertex.type = getNodeType(path[path.length-2],path[0],path[1]);
-  //bound.push(vertex);
-  //bound.det = getDet(path[0],path[1]);
   bound.det = 0;
   for(var i= 0; i < path.length; i++) {
     if (i < path.length -1 || (i == path.length - 1 && partBound.length == 0)) {
@@ -63,8 +57,6 @@ function getBounds(path,polygonType) {
         rightBound = bounds[i].slice(0,bounds[i].minPos+1).reverse();
         leftBound = bounds[i].slice(bounds[i].minPos,bounds[i].length);
     }
-    console.log('lefBound: '+ JSON.stringify(leftBound));
-    console.log('righBound: '+ JSON.stringify(rightBound));
     LML.push({
       left: initiateEdges(leftBound,'left',polygonType),
       right: initiateEdges(rightBound,'right',polygonType),
@@ -118,8 +110,6 @@ function _initiateEdges(points,side,type) {
 
 function initiateEdges(points,side,type) {
   //TODO-vatti remove side its assigned based on position in polygon(can check in AET)
-  //console.log('bound points: ' + JSON.stringify(points));
-  //console.log('bound type: ' + type + ', bound side: ' + side);
   var list = new Bound();
   var edge;
   for(var i=0; i<points.length - 1; i++) {
@@ -130,8 +120,6 @@ function initiateEdges(points,side,type) {
     edge.deltaX = (points[i+1].x - points[i].x)
       / (points[i+1].y - points[i].y);
     list.push(edge);
-    //console.log('bound edge i: ' + i);
-    //console.log('bound edge: ' + JSON.stringify(edge));
   }
   return list;
 }
