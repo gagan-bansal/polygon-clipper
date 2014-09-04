@@ -1,50 +1,25 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <style>
-      .map {
-        height: 300px;
-        width: 800px;
-      }
-.panel {
-  margin-bottom: 20px; 
-}
-
-.tool {
-    border: 1px solid;
-    border-radius: 3px;
-    font-family: helvetica-light;
-    font-size: 20px;
-    font-weight: 100;
-    padding: 2px 5px;
-    width: auto;
-}
-.tool:hover {
-  background-color: grey;
-}
-.active {
-  background-color: green;
-}
-.button {
-  background-color: pink;
-}
-    </style>
+    <link href="./css/polygon-clipper.css" rel="stylesheet" type="text/css" />
     <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.1/jquery.min.js" type="text/javascript"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/openlayers/2.13.1/OpenLayers.js" type="text/javascript"></script>
-    <script src="../dist/polygon-clipper.js" type="text/javascript"></script>
+    <script src="../dist/polygon-clipper.min.js" type="text/javascript"></script>
     <title>Polygon boolean operation test page</title>
   </head>
   <body>
-    <h2>Polygon boolean operation test page</h2>
+  <div class="wrapper">
+    <h2>Vatti polygon clipping algorithm implementation in JavaScript.</h2>
+    <p>This is test page for polygon boolean operations: intersection, union, difference and XOR (union, difference and XOR yet to implement). Hold alt key to draw the holes in subject or clip geometry. You can draw many geometries in subject or clip layer. </p>
     <div id="map" class="map">
       <div id="panel" class="panel">
-        <span id="drawSubj" class="tool draw" >Subject</span>
+        <span id="drawSubj" class="tool draw active" >Subject</span>
         <span id="drawClip" class="tool draw" >Clip</span>
-        <span id="subject" class="tool button">Itersection</span>
-        <span id="subject" class="tool button">Union</span>
+        <span id="clear" class="tool button">Clear All</span>
+        <span id="intersection" class="tool button">Itersection</span>
       </div>
     </div>
     <script src="./js/boolean-test.js" type="text/javascript"></script>
-    <!--script src="./js/random-poly.js" type="text/javascript"></script-->
+  </div>
   </body>
 </html>

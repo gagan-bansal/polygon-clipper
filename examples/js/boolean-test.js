@@ -70,10 +70,13 @@ $('.draw').on('click',function(evt) {
       $(this).addClass('active');
     } else {
       controls[key].deactivate();
-      $(this).removeClass('active');
+      $('#'+key).removeClass('active');
     }
   }
 });
+
+$('#intersection').on('click', doIntersection);
+$('#clear').on('click', clearAll);
 function randomTest() {
   map.layers[1].removeAllFeatures();
   map.layers[1].addFeatures([randomPoly(map.getExtent(),3,8)]);
