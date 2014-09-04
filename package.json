@@ -1,7 +1,7 @@
 {
   "name": "polygon-clipper",
   "version": "0.0.0",
-  "description": "Perform polygon boolean operations union, intersection, difference and XOR",
+  "description": "Vatti polygon clipping algorithm implementation to perform polygon boolean operations union, intersection, difference and XOR",
   "main": "src/main.js",
   "scripts": {
     "test": "mocha",

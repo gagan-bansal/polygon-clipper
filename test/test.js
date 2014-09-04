@@ -1,5 +1,4 @@
 var polygonClipper = require('../index.js'),
-  testDataSet = require('./testdata.js'),
   expect = require('chai').expect;
 
 describe('polygon-clipper: ',function() {
